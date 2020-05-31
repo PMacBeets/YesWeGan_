@@ -16,12 +16,12 @@ import importlib.util
 
 #import NetworkModels
 # Files for Generatring Network Models
-spec = importlib.util.spec_from_file_location("NetworkModels","/content/gdrive/My Drive/PythonFiles/NetworkModels.py")
-NetworkModels = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(NetworkModels)
+#spec = importlib.util.spec_from_file_location("NetworkModels","/content/gdrive/My Drive/PythonFiles/NetworkModels.py")
+#NetworkModels = importlib.util.module_from_spec(spec)
+#spec.loader.exec_module(NetworkModels)
 
 
-FILEHASHKEY = 15 # Change this to check you are running the most recent version on colab
+FILEHASHKEY = 1515 # Change this to check you are running the most recent version on colab
 
 def print_hashkey():
     print(FILEHASHKEY)
@@ -50,13 +50,19 @@ def train2(dataset,var,instr,seeds,model):
 
 
     FID = []
-    loss_history = {"D" :[],
-                    "G" :[]
-                    }
+    history = {"D" :[],
+               "G" :[],
+               "ave_real":[],
+               "ave_fake":[],
+               "mse_real":[],
+               "mse_fake":[],
+                }
+
 
     # prepare the inception v3 model
     V3input_shape =(75, 75, 3)
     modelv3 = InceptionV3(include_top=False, pooling='avg', input_shape=V3input_shape)
+    mse = tf.keras.losses.MeanSquaredError()
 
     for epoch in range(epochs):
         start = time.time()
@@ -69,9 +75,13 @@ def train2(dataset,var,instr,seeds,model):
                 image_batch = image_batch[0]
 
             loss = train_step(image_batch,loss_func,num_latent,generator,discriminator
-                              ,generator_optimizer,discriminator_optimizer)
-            loss_history["D"].append(loss[0])
-            loss_history["G"].append(loss[1])
+                              ,generator_optimizer,discriminator_optimizer,mse)
+            history["D"].append(loss[0])
+            history["G"].append(loss[1])
+            history["ave_real"].append(loss[2])
+            history["ave_fake"].append(loss[3])
+            history["mse_real"].append(loss[2])
+            history["mse_fake"].append(loss[3])
             i+=1
 
             if i%100 == 0:
@@ -119,8 +129,8 @@ def train2(dataset,var,instr,seeds,model):
             fid = calculate_fid(modelv3, images1, images2)
             FID.append(fid)
             print('FID: %.3f' % fid)
-            print(loss_history["D"])
-            print(loss_history["G"])
+            print(history["D"])
+            print(history["G"])
             time4 = time.time() - start
 
         # Save the model every 15 epochs
@@ -148,13 +158,13 @@ def train2(dataset,var,instr,seeds,model):
         # What is the purpose of this??
         # display.clear_output(wait=True)
         # generate_and_save_images(generator, epochs, seed)
-    return (FID, loss_history)
+    return (FID, history)
 
     # `tf.function' causes function to be 'compiled'
 
 
 @tf.function
-def train_step(images,loss_func,num_latent,generator,discriminator,generator_optimizer,discriminator_optimizer):
+def train_step(images,loss_func,num_latent,generator,discriminator,generator_optimizer,discriminator_optimizer,mse):
     noise = tf.random.normal([images.shape[0], num_latent])
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
@@ -163,13 +173,22 @@ def train_step(images,loss_func,num_latent,generator,discriminator,generator_opt
 
         real_output = discriminator(images, training=True)
         fake_output = discriminator(generated_images, training=True)
+
+        # real_output & fake_output have size (batch_size,1) of type Tensor
+        ave_real_output = tf.reduce_mean(real_output)
+        ave_fake_output = tf.reduce_mean(fake_output)
+
+        mse_fake = mse(tf.zeros_like(fake_output), fake_output)
+        mse_real = mse(tf.ones_like(real_output), real_output)
+
         # print(real_output)
-        # print(images.shape)
+        # # print(images.shape)
         # print(real_output.shape)
         # print(fake_output.shape)
+        # raise Exception("ERROR")
 
-        gen_loss = NetworkModels.generator_loss(fake_output, loss_func)
-        disc_loss = NetworkModels.discriminator_loss(real_output, fake_output, loss_func)
+        gen_loss = generator_loss(fake_output, loss_func)
+        disc_loss = discriminator_loss(real_output, fake_output, loss_func)
 
         # Or if you want to try discriminating loss
         # Could add parameter if you wanted once we get it to work
@@ -182,8 +201,15 @@ def train_step(images,loss_func,num_latent,generator,discriminator,generator_opt
     generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
     discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
 
-    return (gen_loss, disc_loss)
+    return (gen_loss, disc_loss,ave_real_output,ave_fake_output,mse_real,mse_fake)
 
+def calc_accuracy(real_output,key:str):
+    if key == "real":
+        pass
+    elif key =="fake":
+        pass
+    else:
+        raise Exception("Incorrect Key")
 
 
 def generate_and_save_images(model, epoch, test_input):
@@ -235,3 +261,100 @@ def calculate_fid(model, images1, images2):
     # calculate score
     fid = ssdiff + trace(sigma1 + sigma2 - 2.0 * covmean)
     return fid
+
+
+# ----------- LossFunction --------- #
+
+def return_loss_func(key: str):
+    def binarycrossentropy_loss():
+        # This method returns a helper function to compute cross entropy loss
+        cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        return cross_entropy
+
+    # calculate wasserstein loss
+    def wasserstein_loss(y_true, y_pred):
+        return backend.mean(y_true * y_pred)
+
+    if key == "binarycrossentropy":
+        cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        return cross_entropy
+
+    elif key == "wasserstein":
+        return wasserstein_loss
+    else:
+        raise Exception('Incorrect "Key" argument')
+
+
+# For non saturating loss
+# Add to possible loss functions maybe??
+# haven't been able to get it to work
+
+# Change code in Train_Step whether you want normal or non discriminating loss
+
+def ns_discriminator_loss(real_output, generated_output):
+    return -tf.reduce_mean(tf.math.log(real_output) + tf.math.log(1 - generated_output))
+
+
+def ns_generator_loss(generated_output):
+    return -tf.reduce_mean(tf.math.log(generated_output))
+
+
+def discriminator_loss(real_output, fake_output, loss_func):
+    real_loss = loss_func(tf.ones_like(real_output), real_output)
+    fake_loss = loss_func(tf.zeros_like(fake_output), fake_output)
+    total_loss = real_loss + fake_loss
+    return total_loss
+
+
+def generator_loss(fake_output, loss_func):
+    # wasserstein_loss(tf.ones_like(fake_output), fake_output)
+    return loss_func(tf.ones_like(fake_output), fake_output)
+
+
+def generator_loss_28(input_z, out_channel_dim=3, alpha=0.2):
+    input_fake = generator(input_z, out_channel_dim, alpha=alpha)
+    d_model_fake, d_logits_fake = discriminator(input_fake, reuse=True, alpha=alpha)
+    g_loss = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logits_fake, labels=tf.ones_like(d_model_fake)))
+    return g_loss
+
+
+def discriminator_loss_28(input_real, out_channel=3, alpha=0.2, smooth_factor=0.1):
+    d_model_real, d_logits_real = discriminator(input_real, alpha=alpha)
+    d_loss_real = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logits_real,
+                                                labels=tf.ones_like(d_model_real) * (1 - smooth_factor)))
+    input_fake = generator(input_z, out_channel_dim, alpha=alpha)
+    _, d_logits_fake = discriminator(input_fake, reuse=True, alpha=alpha)
+    d_loss_fake = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logits_fake, labels=tf.zeros_like(d_model_fake)))
+    return d_loss_real + d_loss_fake
+
+
+def model_loss(input_real, input_z, out_channel_dim, alpha=0.2, smooth_factor=0.1):
+    """
+    Non-saturating loss
+    https://github.com/HACKERSHUBH/Face-Genaration-using-Generative-Adversarial-Network/blob/master/face_gen.ipynb
+    Get the loss for the discriminator and generator
+    :param input_real: Images from the real dataset
+    :param input_z: Z input
+    :param out_channel_dim: The number of channels in the output image
+    :return: A tuple of (discriminator loss, generator loss)
+    """
+    # TODO: Implement Function
+    d_model_real, d_logits_real = discriminator(input_real, alpha=alpha)
+
+    d_loss_real = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logits_real,
+                                                labels=tf.ones_like(d_model_real) * (1 - smooth_factor)))
+
+    input_fake = generator(input_z, out_channel_dim, alpha=alpha)
+    d_model_fake, d_logits_fake = discriminator(input_fake, reuse=True, alpha=alpha)
+
+    d_loss_fake = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logits_fake, labels=tf.zeros_like(d_model_fake)))
+
+    g_loss = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logits_fake, labels=tf.ones_like(d_model_fake)))
+
+    return d_loss_real + d_loss_fake, g_loss
