@@ -52,6 +52,49 @@ def ReadData(flag: str, plotdata: bool, batch_size: int,zoom: bool, size: int, c
 
             dataset = training_data.dataset
             dataset = dataset.shuffle(buffer_size, reshuffle_each_iteration=True)
+
+        if zoom and size == 28 and channels == 1:
+            file_folder = '/content/gdrive/My Drive/TfRecords_28_28_1_Zoom'
+            input_size = (28, 28, 1)  # NCHW or channels_first format
+            data_format = 'channels_last'
+            num_file = 7
+            filename = ['data_{}'.format(i) for i in range(num_file)]
+
+            # batch_size = 64
+            buffer_size = 10000
+            num_labels = 0
+            num_threads = 7
+            shuffle_file = True
+
+            training_data = ReadTFRecords(
+                filename, num_features=28 * 28 * 1, batch_size=batch_size,
+                file_folder=file_folder, num_threads=num_threads,
+                shuffle_file=shuffle_file)
+
+            dataset = training_data.dataset
+            dataset = dataset.shuffle(buffer_size, reshuffle_each_iteration=True)
+
+        if zoom and size == 64 and channels == 3:
+            file_folder = '/content/gdrive/My Drive/TfRecords_64_64_Zoom'
+            input_size = (64, 64, 3)  # NCHW or channels_first format
+            data_format = 'channels_last'
+            num_file = 49
+            filename = ['data_{}'.format(i) for i in range(num_file)]
+
+            # batch_size = 64
+            buffer_size = 10000
+            num_labels = 0
+            num_threads = 7
+            shuffle_file = True
+
+            training_data = ReadTFRecords(
+                filename, num_features=64 * 64 * 3, batch_size=batch_size,
+                file_folder=file_folder, num_threads=num_threads,
+                shuffle_file=shuffle_file)
+
+            dataset = training_data.dataset
+            dataset = dataset.shuffle(buffer_size, reshuffle_each_iteration=True)
+
     else:
         raise Exception('Incorrect "flag argument')
 

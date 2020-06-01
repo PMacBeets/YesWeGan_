@@ -5,7 +5,7 @@ from tensorflow.keras import layers
 import tensorflow as tf
 
 
-FILEHASHKEY = 123
+FILEHASHKEY = 12
 
 def square(x:int):
     return x*x
@@ -38,29 +38,56 @@ def make_generator_model():
 
     return model
     
-def make_generator_model_28(z, out_channel_dim, is_train=True, alpha=0.2, keep_prob=0.5):
+def make_generator_model2():
+    model = tf.keras.Sequential()
+    model.add(layers.Dense( 4 * 4 * 1024, use_bias=False, input_shape=(100,)))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+    #dropout layer?
+
+    model.add(layers.Reshape((7, 7, 512)))
+    assert model.output_shape == (None, 7, 7, 512) # Note: None is the batch size
+
+    model.add(layers.Conv2DTranspose(512, 4, 1, padding='valid', use_bias=False))
+
+    # assert model.output_shape == (None, 7, 7, 128)
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+
+    model.add(layers.Conv2DTranspose(256, 5, 2, padding='same', use_bias=False))
+    # assert model.output_shape == (None, 14, 14, 64)
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+
+    model.add(layers.Conv2DTranspose(3, 5, 2, padding='same', use_bias=False, activation='tanh'))
+    # assert model.output_shape == (None, 28, 28, 3)
+
+    return model
+    
+def make_generator_model_28(z, is_train=True, alpha=0.2, keep_prob=0.5):
     """ From https://github.com/HACKERSHUBH/Face-Genaration-using-Generative-Adversarial-Network/blob/master/face_gen.ipynb
     :param z: Input z
     :param out_channel_dim: The number of channels in the output image
     :param is_train: Boolean if generator is being used for training
     :return: The tensor output of the generator
     """
-    with tf.variable_scope('generator', reuse = (not is_train)):
-        fc = layers.dense(z, 4*4*1024, use_bias=False)
+    out_channel_dim = 3
+    with tf.compat.v1.variable_scope('generator', reuse = (not is_train)):
+        fc = layers.Dense(z, 4*4*1024, use_bias=False)
         fc = tf.reshape(fc, (-1, 4, 4, 1024))
-        bn0 = layers.batch_normalization(fc, training=is_train)
+        bn0 = layers.BatchNormalization(fc, training=is_train)
         lrelu0 = tf.maximum(alpha*bn0, bn0)
         drop0 = layers.dropout(lrelu0, keep_prob, training=is_train)
         
         # Deconvolution, 7x7x512
         conv1= layers.Conv2DTranspose(drop0, 512, 4, 1, 'valid', use_bias=False)
-        bn1 = layers.batch_normalization(conv1, training=is_train)
+        bn1 = layers.BatchNormalization(conv1, training=is_train)
         lrelu1 = tf.maximum(alpha*bn1, bn1)
         drop1 = layers.dropout(lrelu1, keep_prob, training=is_train)
         
         # Deconvolution 14x14x256
         conv2 = layers.Conv2DTranspose(drop1, 256, 5, 2, 'same', use_bias=False)
-        bn2 = layers.batch_normalization(conv2, training=is_train)
+        bn2 = layers.BatchNormalization(conv2, training=is_train)
         lrelu2 = tf.maximum(alpha*bn2, bn2)
         drop2 = layers.dropout(lrelu2, keep_prob, training=is_train)
         
@@ -70,7 +97,30 @@ def make_generator_model_28(z, out_channel_dim, is_train=True, alpha=0.2, keep_p
         out = tf.tanh(logits)
         
         return out
+
     
+def make_generator_model_DCGAN():
+    model = tf.keras.Sequential(name="DCGAN")
+    model.add(layers.Dense(4* 4 * 1024, use_bias=False, input_shape=(100,)))
+    model.add(layers.Reshape((4, 4, 1024)))
+
+    model.add(layers.Conv2DTranspose(512, (5, 5), strides=(2, 2), padding='same', use_bias=False))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+
+    model.add(layers.Conv2DTranspose(256, (5, 5), strides=(2, 2), padding='same', use_bias=False))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+
+    model.add(layers.Conv2DTranspose(128, (5, 5), strides=(2, 2), padding='same', use_bias=False))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+
+    model.add(layers.Conv2DTranspose(3, (5, 5), strides=(2, 2), padding='same', use_bias=False,activation='tanh'))
+    model.add(layers.BatchNormalization())
+
+    return model
+
 
 
 def make_generator_model_MNIST():
@@ -97,7 +147,101 @@ def make_generator_model_MNIST():
   return model
 
 
+def make_generator_model_MNIST_Deep():
+  # use input of size 128
+  model = tf.keras.Sequential()
+
+
+
+  model.add(layers.Dense(128, use_bias=False, input_shape=(128,)))
+  model.add(layers.Reshape((1, 1, 128)))
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2DTranspose(
+      256,kernel_size=(5,5), strides=(1, 1), padding='valid', output_padding=None,
+      data_format=None, dilation_rate=(1, 1), activation=None, use_bias=True,
+      kernel_initializer='glorot_uniform', bias_initializer='zeros',
+      kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None,
+      kernel_constraint=None, bias_constraint=None))
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+ # NOT FINISHED LEFT HALFWAY
+
+  model.add(layers.Reshape((7,7,256)))
+  #assert model.output_shape == (None, 7, 7, 256) # Note: None is the batch size
+
+  model.add(layers.Conv2DTranspose(128, (5, 5), strides=(1, 1), padding='same', use_bias=False))
+  #assert model.output_shape == (None, 7, 7, 128)
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2DTranspose(64, (5, 5), strides=(2, 2), padding='same', use_bias=False))
+  #assert model.output_shape == (None, 14, 14, 64)
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2DTranspose(1, (5, 5), strides=(2, 2), padding='same', use_bias=False, activation='tanh'))
+
+  return model
+
+
 # --------- Discriminators --------- #
+
+def make_discriminator_model_DCGAN():
+    model = tf.keras.Sequential()
+    model.add(layers.Conv2D(128, (5, 5), strides=(2, 2), padding='same',
+                            input_shape=[64, 64, 3]))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+    #model.add(layers.Dropout(0.3))
+
+    model.add(layers.Conv2D(256, (5, 5), strides=(2, 2), padding='same'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+
+    model.add(layers.Conv2D(512, (5, 5), strides=(2, 2), padding='same'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.LeakyReLU())
+
+    model.add(layers.Flatten())
+    model.add(layers.Dense(1,activation="sigmoid"))
+
+
+    # with tf.variable_scope("discriminator") as scope:
+    #     if reuse:
+    #         scope.reuse_variables()
+    #
+    #     if not self.y_dim:
+    #         h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
+    #         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim * 2, name='d_h1_conv')))
+    #         h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim * 4, name='d_h2_conv')))
+    #         h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim * 8, name='d_h3_conv')))
+    #         h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
+    #
+    #         return tf.nn.sigmoid(h4), h4
+    #     else:
+    #         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
+    #         x = conv_cond_concat(image, yb)
+    #
+    #         h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
+    #         h0 = conv_cond_concat(h0, yb)
+    #
+    #         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
+    #         h1 = tf.reshape(h1, [self.batch_size, -1])
+    #         h1 = concat([h1, y], 1)
+    #
+    #         h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
+    #         h2 = concat([h2, y], 1)
+    #
+    #         h3 = linear(h2, 1, 'd_h3_lin')
+    #
+    #         return tf.nn.sigmoid(h3), h3
+
+    return model
+
+
 
 def make_discriminator_model():
     model = tf.keras.Sequential()
@@ -230,3 +374,28 @@ def make_discriminator_model_MNIST():
   model.add(layers.Dense(1))
 
   return model
+
+
+def make_discriminator_model_MNIST_Deep():
+  model = tf.keras.Sequential()
+  model.add(layers.Conv2D(32, (5, 5), strides=(2, 2), padding='same', input_shape=[28, 28, 1]))
+  model.add(layers.LeakyReLU())
+  model.add(layers.Dropout(0.5))
+
+  model.add(layers.Conv2D(64, (5, 5), strides=(1, 1), padding='same'))
+  model.add(layers.LeakyReLU())
+  model.add(layers.Dropout(0.5))
+
+  model.add(layers.Conv2D(128, (5, 5), strides=(1, 1), padding='same'))
+  model.add(layers.LeakyReLU())
+  model.add(layers.Dropout(0.5))
+
+  model.add(layers.Conv2D(256, (5, 5), strides=(2, 2), padding='same'))
+  model.add(layers.LeakyReLU())
+  model.add(layers.Dropout(0.5))
+
+  model.add(layers.Flatten())
+  model.add(layers.Dense(1))
+
+  return model
+
