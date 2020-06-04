@@ -1,6 +1,7 @@
 import os
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import numpy as np
 
 FILEHASHKEY = 123 # Change this to check you are running the most recent version on colab
 
@@ -79,7 +80,7 @@ def ReadData(flag: str, plotdata: bool, batch_size: int,zoom: bool, size: int, c
             input_size = (64, 64, 3)  # NCHW or channels_first format
             data_format = 'channels_last'
             num_file = 49
-            filename = ['data_{}'.format(i) for i in range(num_file)]
+            filename = ['data_{:02d}'.format(i) for i in range(num_file)]
 
             # batch_size = 64
             buffer_size = 10000
@@ -91,6 +92,7 @@ def ReadData(flag: str, plotdata: bool, batch_size: int,zoom: bool, size: int, c
                 filename, num_features=64 * 64 * 3, batch_size=batch_size,
                 file_folder=file_folder, num_threads=num_threads,
                 shuffle_file=shuffle_file)
+
 
             dataset = training_data.dataset
             dataset = dataset.shuffle(buffer_size, reshuffle_each_iteration=True)
@@ -104,7 +106,7 @@ def ReadData(flag: str, plotdata: bool, batch_size: int,zoom: bool, size: int, c
         plt.figure(figsize=(10, 10))
 
         # Check Images are correct
-        for i, data in enumerate(dataset.take(8)):
+        for i, data in enumerate(dataset.take(9)):
             if flag == "CelebA":
                 data = data[0]
 
@@ -113,13 +115,16 @@ def ReadData(flag: str, plotdata: bool, batch_size: int,zoom: bool, size: int, c
             plt.imshow(img)
         plt.show()
 
+        print(np.amin(data), np.amax(data))
+
 
     # Post dataplotting batching of data
     dataset = dataset.batch(batch_size)
+    dataset.repeat(None)
     # Not sure if these 2 are nessercary
     # I think the first shuffle, shuffle teh entire dataset while the second shuffle
     # shuffles the batches constantly as its past through the epochs which is more important
-    dataset.repeat(None)
+
 
     return dataset
 
@@ -223,7 +228,9 @@ class ReadTFRecords(object):
         image = tf.io.parse_tensor(example['image'], out_type=float)
         label = tf.io.parse_tensor(example['label'], out_type=float)
         image_shape = [example['height'], example['width'], example['depth']]
+        #image = tf.cast(image_shape, tf.float32)
         image = tf.reshape(image, image_shape)
+        image = tf.subtract(tf.divide(image, 127.5), 1)
 
         return (image, example['label'])
 

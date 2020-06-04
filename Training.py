@@ -21,10 +21,64 @@ import importlib.util
 #spec.loader.exec_module(NetworkModels)
 
 
-FILEHASHKEY = 1516 # Change this to check you are running the most recent version on colab
+FILEHASHKEY = 4 # Change this to check you are running the most recent version on colab
 
 def print_hashkey():
     print(FILEHASHKEY)
+
+def calc_FID_MC(generator,num_FID_MC,num_latent,modelv3):
+
+    V3input_shape =(75, 75, 3)
+    #modelv3 = InceptionV3(include_top=False, pooling='avg', input_shape=V3input_shape)
+
+    seed_FID2 = tf.random.normal([num_FID_MC, num_latent])
+    seed_FID1 = tf.random.normal([num_FID_MC, num_latent])
+    predictions1 = generator(seed_FID1, training=False)
+    predictions2 = generator(seed_FID2, training=False)
+
+
+    images2 = tf.dtypes.cast(predictions2, tf.float32)
+    images1 = tf.dtypes.cast(predictions1, tf.float32)
+
+    # resize images
+    images1 = scale_images(images1, V3input_shape)
+    images2 = scale_images(images2, V3input_shape)
+    # pre-process images
+    images1 = preprocess_input(images1)
+    images2 = preprocess_input(images2)
+    # calculate fid
+    fid = calculate_fid(modelv3, images1, images2)
+    #print('FID: %.3f' % fid)
+    return fid
+
+def calc_FID(generator,FID,seed_FID,num_ex_FID,batch_size,V3input_shape,modelv3,start,image_batch):
+    predictions = generator(seed_FID, training=False)
+    images2 = predictions
+
+    # may return error
+    if num_ex_FID > batch_size:
+        raise Exception("num_ex_FID>batch_size")
+
+    images1 = image_batch[0][:num_ex_FID]
+    images2 = tf.dtypes.cast(images2, tf.float32)
+    images1 = tf.dtypes.cast(images1, tf.float32)
+    # images2 = tf.image.convert_image_dtype(images2, dtype=tf.float32, saturate=False)
+    # print(images1)
+    # print(images2)
+
+    # images1 = images1.astype('float32')
+    # images2 = images2.astype('float32')
+    # resize images
+    images1 = scale_images(images1, V3input_shape)
+    images2 = scale_images(images2, V3input_shape)
+    # pre-process images
+    images1 = preprocess_input(images1)
+    images2 = preprocess_input(images2)
+    # calculate fid
+    fid = calculate_fid(modelv3, images1, images2)
+    FID.append(fid)
+    print('FID: %.3f' % fid)
+
 
 
 def train2(dataset,var,instr,seeds,model):
@@ -35,6 +89,7 @@ def train2(dataset,var,instr,seeds,model):
     label_smoothing = var["label_smoothing"]
 
     FID_bool = instr["FID"]
+    FID_batch_interval = instr['FID_batch_interval']
     data_flag = instr["dataflag"]
 
     seed_GIF = seeds["seed_GIF"]
@@ -48,10 +103,19 @@ def train2(dataset,var,instr,seeds,model):
     generator_optimizer = model["generator_optimizer"]
     discriminator_optimizer = model["discriminator_optimizer"]
 
+    if data_flag == "CelebA":
+        num_instance = 202599
+    elif data_flag == "MNIST":
+        num_instance = 60000
+
+
+    num_steps_per_epoch = num_instance // batch_size
+
 
 
 
     FID = []
+    FID_MC = []
     history = {"D" :[],
                "G" :[],
                "ave_real":[],
@@ -67,6 +131,8 @@ def train2(dataset,var,instr,seeds,model):
     mse = tf.keras.losses.MeanSquaredError()
     discriminator_loss_func = return_discriminator_loss_func(loss_func_key)
     generator_loss_func = return_generator_loss_func(loss_func_key)
+    bar = tf.keras.utils.Progbar(num_steps_per_epoch, stateful_metrics=('loss_gen', 'loss_dis'))
+
 
     for epoch in range(epochs):
         start = time.time()
@@ -80,17 +146,28 @@ def train2(dataset,var,instr,seeds,model):
 
             loss = train_step(image_batch,num_latent,generator,discriminator
                               ,generator_optimizer,discriminator_optimizer,mse,label_smoothing,discriminator_loss_func,generator_loss_func)
+
             history["D"].append(loss[0])
             history["G"].append(loss[1])
             history["ave_real"].append(loss[2])
             history["ave_fake"].append(loss[3])
-            history["mse_real"].append(loss[2])
-            history["mse_fake"].append(loss[3])
+            history["mse_real"].append(loss[4])
+            history["mse_fake"].append(loss[5])
             i+=1
 
-            if i%100 == 0:
+            if i%10 == 0:
                 display.clear_output(wait=True)
-                print("Number of images processed: {}".format(i*batch_size) )
+                print("Epoch:{}  Number of images processed: {}".format(epoch,i*batch_size) )
+
+            if i%5 == 0:
+                bar.update(i + 1, [('loss_gen', loss[1]), ('loss_dis', loss[0])])
+
+            if FID_batch_interval!=0 and i%FID_batch_interval==0:
+                calc_FID(generator, FID, seed_FID, num_ex_FID, batch_size, V3input_shape, modelv3, start, image_batch)
+                num_FID_MC = 64
+                fid_mc = calc_FID_MC(generator, num_FID_MC, num_latent, modelv3)
+                FID_MC.append(fid_mc)
+
 
 
 
@@ -98,218 +175,54 @@ def train2(dataset,var,instr,seeds,model):
 
         # Produce images for the GIF as we go
         display.clear_output(wait=True)
-        generate_and_save_images(generator, epoch + 1, seed_GIF)
+        #generate_and_save_images(generator, epoch + 1, seed_GIF)
+        test_seed = tf.random.normal([num_ex_GIF, num_latent])
+        gen_image = generator(test_seed, training=False)
+        generate_and_save_images2(gen_image)
 
 
         time3 = time.time() - start
         if FID_bool:
-            # Produce Images to be evaluated by FID
 
-            predictions = generator(seed_FID, training=False)
-            images2 = predictions
-
-            time4_1 = time.time() - start
-            # may return error
-            if num_ex_FID>batch_size:
-                raise Exception("num_ex_FID>batch_size")
-
-
-            images1 = image_batch[0][:num_ex_FID]
-            images2 = tf.dtypes.cast(images2, tf.float32)
-            images1 = tf.dtypes.cast(images1, tf.float32)
-            # images2 = tf.image.convert_image_dtype(images2, dtype=tf.float32, saturate=False)
-            # print(images1)
-            # print(images2)
-
-            # images1 = images1.astype('float32')
-            # images2 = images2.astype('float32')
-            # resize images
-            images1 = scale_images(images1, V3input_shape)
-            images2 = scale_images(images2, V3input_shape)
-            # pre-process images
-            images1 = preprocess_input(images1)
-            images2 = preprocess_input(images2)
-            time4_2 = time.time() - start
-            # calculate fid
-            fid = calculate_fid(modelv3, images1, images2)
-            FID.append(fid)
-            print('FID: %.3f' % fid)
-            print(history["D"])
-            print(history["G"])
+            calc_FID(generator, FID, seed_FID, num_ex_FID, batch_size, V3input_shape, modelv3, start, image_batch)
+            num_FID_MC = 64
+            fid_mc = calc_FID_MC(generator, num_FID_MC, num_latent, modelv3)
+            FID_MC.append(fid_mc)
             time4 = time.time() - start
+            # Produce Images to be evaluated by FID
 
         # Save the model every 15 epochs
         if (epoch + 1) % 15 == 0:
             pass
             # checkpoint.save(file_prefix=checkpoint_prefix)
 
-        # Save the images every 10 epochs
+        # Save the images every 1 epochs
         if (epoch + 1) % 1 == 0:
             display.clear_output(wait=True)
             generate_and_save_images(generator,
                                      epochs,
                                      seed_GIF)
 
-        print('Time for epoch {} is {} sec\n'.format(epoch + 1, time2))  # Why doesn't this display??
-        print('Time to save gif is {} sec\n'.format(time3 - time2))  # Why doesn't this display??
+        print('Time for epoch {} is {} sec\n'.format(epoch + 1, time2))  #
+        print('Time to save gif is {} sec\n'.format(time3 - time2))  #
 
         if FID_bool:
-            print('Time to calc FID is {} sec\n'.format(time4 - time3))  # Why doesn't this display??
-            print('Time to generate images & build model is {} sec\n'.format(
-                time4_1 - time3))  # Why doesn't this display??
-            print('Time to preprocess images {} sec\n'.format(time4_2 - time4_1))  # Why doesn't this display??
-            print('Time to actually calculate FID {} sec\n'.format(time4 - time4_2))  # Why doesn't this display??
-
+            print('Time to calc FID is {} sec\n'.format(time4 - time3))
         # Generate after the final epoch
         # What is the purpose of this??
         # display.clear_output(wait=True)
         # generate_and_save_images(generator, epochs, seed)
-    return (FID, history)
+    return (FID, history, FID_MC)
 
-def ns_train(dataset,var,instr,seeds,model):
-
-    epochs = var["epochs"]
-    num_latent = var["num_latent"]
-    batch_size = var["batch_size"]
-    label_smoothing = var["label_smoothing"]
-
-    FID_bool = instr["FID"]
-    data_flag = instr["dataflag"]
-
-    seed_GIF = seeds["seed_GIF"]
-    seed_FID = seeds["seed_FID"]
-    num_ex_GIF = seeds["num_ex_GIF"]
-    num_ex_FID = seeds["num_ex_FID"]
-
-    generator = model["generator"]
-    discriminator = model["discriminator"]
-    loss_func = model["loss_func"]
-    loss_func_g = model["loss_func_g"]
-    loss_func_d = model["loss_func_d"]
-    generator_optimizer = model["generator_optimizer"]
-    discriminator_optimizer = model["discriminator_optimizer"]
-
-
-
-
-    FID = []
-    history = {"D" :[],
-               "G" :[],
-               "ave_real":[],
-               "ave_fake":[],
-               "mse_real":[],
-               "mse_fake":[],
-                }
-
-
-    # prepare the inception v3 model
-    V3input_shape =(75, 75, 3)
-    modelv3 = InceptionV3(include_top=False, pooling='avg', input_shape=V3input_shape)
-    mse = tf.keras.losses.MeanSquaredError()
-
-    for epoch in range(epochs):
-        start = time.time()
-
-        i = 0
-        for image_batch in dataset:
-
-            # Because CelebA batch contains labels that need to be parsed
-            if data_flag == "CelebA":
-                image_batch = image_batch[0]
-
-            loss = ns_train_step(image_batch,loss_func_g,loss_func_d,num_latent,generator,discriminator
-                              ,generator_optimizer,discriminator_optimizer,mse,label_smoothing)
-            history["D"].append(loss[0])
-            history["G"].append(loss[1])
-            history["ave_real"].append(loss[2])
-            history["ave_fake"].append(loss[3])
-            history["mse_real"].append(loss[2])
-            history["mse_fake"].append(loss[3])
-            i+=1
-
-            if i%100 == 0:
-                display.clear_output(wait=True)
-                print("Number of images processed: {}".format(i*batch_size) )
-
-
-
-        time2 = time.time() - start
-
-        # Produce images for the GIF as we go
-        display.clear_output(wait=True)
-        generate_and_save_images(generator, epoch + 1, seed_GIF)
-
-        time3 = time.time() - start
-        if FID_bool:
-            # Produce Images to be evaluated by FID
-
-            predictions = generator(seed_FID, training=False)
-            images2 = predictions
-
-            time4_1 = time.time() - start
-            # may return error
-            if num_ex_FID>batch_size:
-                raise Exception("num_ex_FID>batch_size")
-
-
-            images1 = image_batch[0][:num_ex_FID]
-            images2 = tf.dtypes.cast(images2, tf.float32)
-            images1 = tf.dtypes.cast(images1, tf.float32)
-            # images2 = tf.image.convert_image_dtype(images2, dtype=tf.float32, saturate=False)
-            # print(images1)
-            # print(images2)
-
-            # images1 = images1.astype('float32')
-            # images2 = images2.astype('float32')
-            # resize images
-            images1 = scale_images(images1, V3input_shape)
-            images2 = scale_images(images2, V3input_shape)
-            # pre-process images
-            images1 = preprocess_input(images1)
-            images2 = preprocess_input(images2)
-            time4_2 = time.time() - start
-            # calculate fid
-            fid = calculate_fid(modelv3, images1, images2)
-            FID.append(fid)
-            print('FID: %.3f' % fid)
-            print(history["D"])
-            print(history["G"])
-            time4 = time.time() - start
-
-        # Save the model every 15 epochs
-        if (epoch + 1) % 15 == 0:
-            pass
-            # checkpoint.save(file_prefix=checkpoint_prefix)
-
-        # Save the images every 10 epochs
-        if (epoch + 1) % 1 == 0:
-            display.clear_output(wait=True)
-            generate_and_save_images(generator,
-                                     epochs,
-                                     seed_GIF)
-
-        print('Time for epoch {} is {} sec\n'.format(epoch + 1, time2))  # Why doesn't this display??
-        print('Time to save gif is {} sec\n'.format(time3 - time2))  # Why doesn't this display??
-
-        if FID_bool:
-            print('Time to calc FID is {} sec\n'.format(time4 - time3))  # Why doesn't this display??
-            print('Time to generate images & build model is {} sec\n'.format(
-                time4_1 - time3))  # Why doesn't this display??
-            print('Time to preprocess images {} sec\n'.format(time4_2 - time4_1))  # Why doesn't this display??
-            print('Time to actually calculate FID {} sec\n'.format(time4 - time4_2))  # Why doesn't this display??
-
-        # Generate after the final epoch
-        # What is the purpose of this??
-        # display.clear_output(wait=True)
-        # generate_and_save_images(generator, epochs, seed)
-    return (FID, history)
 
 
 # `tf.function' causes function to be 'compiled'
 
 @tf.function
 def train_step(images,num_latent,generator,discriminator,generator_optimizer,discriminator_optimizer,mse,label_smoothing,discriminator_loss,generator_loss):
+
     noise = tf.random.normal([images.shape[0], num_latent])
+
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
         generated_images = generator(noise, training=True)
@@ -318,21 +231,6 @@ def train_step(images,num_latent,generator,discriminator,generator_optimizer,dis
         real_output = discriminator(images, training=True)
         fake_output = discriminator(generated_images, training=True)
 
-        # real_output & fake_output have size (batch_size,1) of type Tensor
-        ave_real_output = tf.reduce_mean(real_output)
-        ave_fake_output = tf.reduce_mean(fake_output)
-
-        mse_fake = tf.reduce_mean(tf.math.square(tf.zeros_like(fake_output)+label_smoothing - fake_output))
-        mse_real = tf.reduce_mean(tf.math.square(tf.ones_like(real_output)-label_smoothing - real_output))
-
-        #mse_fake = mse(tf.zeros_like(fake_output)+label_smoothing, fake_output)
-        #mse_real = mse(tf.ones_like(real_output)-label_smoothing, real_output)
-
-        # print(real_output)
-        # # print(images.shape)
-        # print(real_output.shape)
-        # print(fake_output.shape)
-        # raise Exception("ERROR")
 
         gen_loss = generator_loss(fake_output,label_smoothing)
         disc_loss = discriminator_loss(real_output, fake_output, label_smoothing)
@@ -348,49 +246,18 @@ def train_step(images,num_latent,generator,discriminator,generator_optimizer,dis
     generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
     discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
 
+    # real_output & fake_output have size (batch_size,1) of type Tensor
+    ave_real_output = tf.reduce_mean(real_output)
+    ave_fake_output = tf.reduce_mean(fake_output)
+
+    # WHY IS mse_real full of nonsense results
+
+    mse_fake = tf.reduce_mean(tf.math.square(tf.zeros_like(fake_output) + label_smoothing - fake_output))
+    mse_real = tf.reduce_mean(tf.math.square(tf.ones_like(real_output) - label_smoothing - real_output))
+
     return (gen_loss, disc_loss,ave_real_output,ave_fake_output,mse_real,mse_fake)
     
-@tf.function
-def ns_train_step(images,loss_func_g,loss_func_d,num_latent,generator,discriminator,generator_optimizer,discriminator_optimizer,mse,label_smoothing):
-    noise = tf.random.normal([images.shape[0], num_latent])
 
-    with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
-        generated_images = generator(noise, training=True)
-
-
-        real_output = discriminator(images, training=True)
-        fake_output = discriminator(generated_images, training=True)
-
-        # real_output & fake_output have size (batch_size,1) of type Tensor
-        ave_real_output = tf.reduce_mean(real_output)
-        ave_fake_output = tf.reduce_mean(fake_output)
-
-        # 0 = fake
-        # 1 = real
-        mse_fake = mse(tf.zeros_like(fake_output)+label_smoothing, fake_output)
-        mse_real = mse(tf.ones_like(real_output)-label_smoothing, real_output)
-
-        # print(real_output)
-        # # print(images.shape)
-        # print(real_output.shape)
-        # print(fake_output.shape)
-        # raise Exception("ERROR")
-
-        # gen_loss = generator_loss(fake_output, loss_func_g,label_smoothing)
-        # disc_loss = discriminator_loss(real_output, fake_output, loss_func_d,label_smoothing)
-
-        # Or if you want to try discriminating loss
-        # Could add parameter if you wanted once we get it to work
-        gen_loss = ns_generator_loss(fake_output)
-        disc_loss = ns_discriminator_loss(real_output, fake_output)
-
-    gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
-    gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
-
-    generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
-    discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
-
-    return (gen_loss, disc_loss,ave_real_output,ave_fake_output,mse_real,mse_fake)
 
 def calc_accuracy(real_output,key:str):
     if key == "real":
@@ -415,6 +282,17 @@ def generate_and_save_images(model, epoch, test_input):
 
   plt.savefig('image_at_epoch_{:04d}.png'.format(epoch))
   plt.show()
+
+def generate_and_save_images2(gen_image):
+
+    plt.figure(figsize=(10, 10))
+
+    for ind, im in enumerate(gen_image[:9]):
+        im = tf.keras.preprocessing.image.array_to_img(im)
+        plt.subplot(3, 3, ind + 1)
+        plt.imshow(im)
+    plt.tight_layout()
+    plt.show()
 
 
 # example of calculating the frechet inception distance in Keras for cifar10
@@ -465,14 +343,6 @@ def return_loss_func(key: str):
         cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
         return cross_entropy
 
-    # Delete this??
-
-    if key == "nonsat_d":
-        return ns_discriminator_loss
-
-    if key == "nonsat_g":
-        return ns_generator_loss
-
     elif key == "wasserstein":
         return wasserstein_loss
     else:
@@ -483,9 +353,15 @@ def return_discriminator_loss_func(key: str):
     def ns_discriminator_loss(real_output, generated_output,label_smoothing):
         return -tf.reduce_mean(tf.math.log(real_output) + tf.math.log(1 - generated_output))
 
+    def ns_discriminator_loss_Wei(score_real, score_gen, label_smoothing):
+        return tf.reduce_mean(tf.nn.softplus(score_gen) + tf.nn.softplus(-score_real) + label_smoothing * score_real)
+
 
     if key =="n_s":
         return ns_discriminator_loss
+
+    if key == "non_sat":
+        return ns_discriminator_loss_Wei
 
     else:
         loss_func = return_loss_func(key)
@@ -503,8 +379,14 @@ def return_generator_loss_func(key:str):
     def ns_generator_loss(generated_output,label_smoothing):
         return -tf.reduce_mean(tf.math.log(generated_output))
 
+    def ns_generator_loss_Wei(score_gen, label_smoothing):
+        return tf.reduce_mean(tf.nn.softplus(-score_gen))
+
     if key =="n_s":
         return ns_generator_loss
+
+    if key =="non_sat":
+        return ns_generator_loss_Wei
 
     else:
         loss_func = return_loss_func(key)
@@ -595,3 +477,4 @@ def model_loss(input_real, input_z, out_channel_dim, alpha=0.2, smooth_factor=0.
         tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logits_fake, labels=tf.ones_like(d_model_fake)))
 
     return d_loss_real + d_loss_fake, g_loss
+

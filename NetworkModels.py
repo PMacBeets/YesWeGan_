@@ -5,10 +5,11 @@ from tensorflow.keras import layers
 import tensorflow as tf
 
 
-FILEHASHKEY = 12
+FILEHASHKEY = 8
 
 def square(x:int):
     return x*x
+
 
 
 # ----------- Generators --------- #
@@ -64,7 +65,7 @@ def make_generator_model2():
 
     return model
     
-def make_generator_model_28(z, is_train=True, alpha=0.2, keep_prob=0.5):
+def make_generator_model_28(is_train=True, alpha=0.2, keep_prob=0.5):
     """ From https://github.com/HACKERSHUBH/Face-Genaration-using-Generative-Adversarial-Network/blob/master/face_gen.ipynb
     :param z: Input z
     :param out_channel_dim: The number of channels in the output image
@@ -72,6 +73,7 @@ def make_generator_model_28(z, is_train=True, alpha=0.2, keep_prob=0.5):
     :return: The tensor output of the generator
     """
     out_channel_dim = 3
+    z = 3
     with tf.compat.v1.variable_scope('generator', reuse = (not is_train)):
         fc = layers.Dense(z, 4*4*1024, use_bias=False)
         fc = tf.reshape(fc, (-1, 4, 4, 1024))
@@ -122,6 +124,49 @@ def make_generator_model_DCGAN():
     return model
 
 
+def make_generator_model_DCGAN_Final():
+    data_format = 'channels_last'
+
+    # generator
+    latent_size = 128
+    latent_shape = (1024, 4, 4) if data_format == 'channels_first' else (4, 4, 1024)
+    axis = 1 if data_format == 'channels_first' else -1
+
+    generator = tf.keras.Sequential(name="generator")
+    generator.add(layers.Dense(4 * 4 * 1024, use_bias=True, input_shape=(latent_size,), name='dense'))
+    generator.add(layers.Reshape(latent_shape, name='reshape'))
+
+    generator.add(
+        layers.Conv2DTranspose(512, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                               name='up1'))
+    generator.add(layers.BatchNormalization(axis=axis, name='bn1'))
+    generator.add(layers.ReLU(name='relu1'))
+
+    generator.add(
+        layers.Conv2DTranspose(256, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                               name='up2'))
+    generator.add(layers.BatchNormalization(axis=axis, name='bn2'))
+    generator.add(layers.ReLU(name='relu2'))
+
+    generator.add(
+        layers.Conv2DTranspose(128, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                               name='up3'))
+    generator.add(layers.BatchNormalization(axis=axis, name='bn3'))
+    generator.add(layers.ReLU(name='relu3'))
+
+    generator.add(
+        layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                               name='up4'))
+    generator.add(layers.BatchNormalization(axis=axis, name='bn4'))
+    generator.add(layers.ReLU(name='relu4'))
+
+    generator.add(layers.Conv2D(3, (3, 3), padding='same', use_bias=True, activation='tanh', data_format=data_format,
+                                name='to_im'))
+
+    return generator
+
+
+
 
 def make_generator_model_MNIST():
   model = tf.keras.Sequential()
@@ -149,28 +194,19 @@ def make_generator_model_MNIST():
 
 def make_generator_model_MNIST_Deep():
   # use input of size 128
+
   model = tf.keras.Sequential()
-
-
-
-  model.add(layers.Dense(128, use_bias=False, input_shape=(128,)))
-  model.add(layers.Reshape((1, 1, 128)))
+  model.add(layers.Dense(7 * 7 * 512, use_bias=False, input_shape=(100,)))
   model.add(layers.BatchNormalization())
   model.add(layers.LeakyReLU())
 
-  model.add(layers.Conv2DTranspose(
-      256,kernel_size=(5,5), strides=(1, 1), padding='valid', output_padding=None,
-      data_format=None, dilation_rate=(1, 1), activation=None, use_bias=True,
-      kernel_initializer='glorot_uniform', bias_initializer='zeros',
-      kernel_regularizer=None, bias_regularizer=None, activity_regularizer=None,
-      kernel_constraint=None, bias_constraint=None))
+  model.add(layers.Reshape((7, 7, 512)))
+  assert model.output_shape == (None, 7, 7, 512)  # Note: None is the batch size
+
+  model.add(layers.Conv2DTranspose(256, (5, 5), strides=(1, 1), padding='same', use_bias=False))
+  #assert model.output_shape == (None, 9, 9, 256)
   model.add(layers.BatchNormalization())
   model.add(layers.LeakyReLU())
-
- # NOT FINISHED LEFT HALFWAY
-
-  model.add(layers.Reshape((7,7,256)))
-  #assert model.output_shape == (None, 7, 7, 256) # Note: None is the batch size
 
   model.add(layers.Conv2DTranspose(128, (5, 5), strides=(1, 1), padding='same', use_bias=False))
   #assert model.output_shape == (None, 7, 7, 128)
@@ -184,7 +220,42 @@ def make_generator_model_MNIST_Deep():
 
   model.add(layers.Conv2DTranspose(1, (5, 5), strides=(2, 2), padding='same', use_bias=False, activation='tanh'))
 
+
   return model
+
+
+def make_generator_model_MNIST_Deep3():
+  # use input of size 128
+
+  model = tf.keras.Sequential()
+  model.add(layers.Dense(7 * 7 * 512, use_bias=False, input_shape=(100,)))
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Reshape((7, 7, 512)))
+  assert model.output_shape == (None, 7, 7, 512)  # Note: None is the batch size
+
+  model.add(layers.Conv2DTranspose(256, (5, 5), strides=(1, 1), padding='same', use_bias=False))
+  #assert model.output_shape == (None, 9, 9, 256)
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2DTranspose(128, (5, 5), strides=(1, 1), padding='same', use_bias=False))
+  #assert model.output_shape == (None, 7, 7, 128)
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2DTranspose(64, (5, 5), strides=(2, 2), padding='same', use_bias=False))
+  #assert model.output_shape == (None, 14, 14, 64)
+  model.add(layers.BatchNormalization())
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2DTranspose(1, (5, 5), strides=(2, 2), padding='same', use_bias=False, activation='tanh'))
+
+
+  return model
+
+
 
 
 # --------- Discriminators --------- #
@@ -208,39 +279,73 @@ def make_discriminator_model_DCGAN():
     model.add(layers.Flatten())
     model.add(layers.Dense(1,activation="sigmoid"))
 
-
-    # with tf.variable_scope("discriminator") as scope:
-    #     if reuse:
-    #         scope.reuse_variables()
-    #
-    #     if not self.y_dim:
-    #         h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
-    #         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim * 2, name='d_h1_conv')))
-    #         h2 = lrelu(self.d_bn2(conv2d(h1, self.df_dim * 4, name='d_h2_conv')))
-    #         h3 = lrelu(self.d_bn3(conv2d(h2, self.df_dim * 8, name='d_h3_conv')))
-    #         h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
-    #
-    #         return tf.nn.sigmoid(h4), h4
-    #     else:
-    #         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
-    #         x = conv_cond_concat(image, yb)
-    #
-    #         h0 = lrelu(conv2d(x, self.c_dim + self.y_dim, name='d_h0_conv'))
-    #         h0 = conv_cond_concat(h0, yb)
-    #
-    #         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim + self.y_dim, name='d_h1_conv')))
-    #         h1 = tf.reshape(h1, [self.batch_size, -1])
-    #         h1 = concat([h1, y], 1)
-    #
-    #         h2 = lrelu(self.d_bn2(linear(h1, self.dfc_dim, 'd_h2_lin')))
-    #         h2 = concat([h2, y], 1)
-    #
-    #         h3 = linear(h2, 1, 'd_h3_lin')
-    #
-    #         return tf.nn.sigmoid(h3), h3
-
     return model
 
+def make_discriminator_model_DCGAN_Final(Batch_Norm:bool):
+    data_format = 'channels_last'
+    axis = 1 if data_format == 'channels_first' else -1
+    im_size = (64, 64, 3)
+
+    discriminator = tf.keras.Sequential(name='discriminator')
+    discriminator.add(
+        layers.Conv2D(64, (3, 3), padding='same', use_bias=True, data_format=data_format, input_shape=im_size,
+                      name='from_im'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu0'))
+
+    discriminator.add(
+        layers.Conv2D(128, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down1'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn1'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu1'))
+    discriminator.add(
+        layers.Conv2D(128, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans1'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn2'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu2'))
+
+    discriminator.add(
+        layers.Conv2D(256, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down2'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn3'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu3'))
+    discriminator.add(
+        layers.Conv2D(256, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans2'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn4'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu4'))
+
+    discriminator.add(
+        layers.Conv2D(512, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down3'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn5'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu5'))
+    discriminator.add(
+        layers.Conv2D(512, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans3'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn6'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu6'))
+
+    discriminator.add(
+        layers.Conv2D(1024, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down4'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn7'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu7'))
+    discriminator.add(
+        layers.Conv2D(1024, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans4'))
+    if Batch_Norm:
+        discriminator.add(layers.BatchNormalization(axis=axis, name='bn8'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu8'))
+
+    discriminator.add(layers.Flatten(name='flatten'))
+    discriminator.add(layers.Dense(1, activation='linear', name='score'))
+
+
+
+    return discriminator
 
 
 def make_discriminator_model():
@@ -376,26 +481,327 @@ def make_discriminator_model_MNIST():
   return model
 
 
+def make_discriminator_model_MNIST_Dynamic(dropout: bool,batch_norm: bool,activation):
+  axis=-1
+  model = tf.keras.Sequential()
+  model.add(layers.Conv2D(64, (5, 5), strides=(2, 2), padding='same', input_shape=[28, 28, 1]))
+  if batch_norm:
+    model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+  if dropout:
+      model.add(layers.Dropout(0.3))
+
+  model.add(layers.Conv2D(128, (5, 5), strides=(2, 2), padding='same'))
+  if batch_norm:
+    model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+  if dropout:
+      model.add(layers.Dropout(0.3))
+
+  model.add(layers.Flatten())
+  model.add(layers.Dense(1, activation=activation))
+
+  return model
+
+#try batch1_2 0.29 mil paramters
+#try deep!_4 0.4 mill paramaeters
+def make_discriminator_model_MNIST_Dynamic_Deeper(dropout: bool,batch_norm: bool,activation,ksize:int,Deeper:int,Double:bool):
+  axis=-1
+  model = tf.keras.Sequential()
+
+  model.add(layers.Conv2D(32, (4+ksize, 4+ksize), strides=(2, 2), padding='same', input_shape=[28, 28, 1]))
+  # NO Batch Normalisation
+  model.add(layers.LeakyReLU())
+
+
+  model.add(layers.Conv2D(64, (4+ksize, 4+ksize), strides=(2, 2), padding='same'))
+  if batch_norm:
+    model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+  if dropout:
+      model.add(layers.Dropout(0.3))
+
+  if Double:
+      model.add(layers.Conv2D(64, (4 + ksize, 4 + ksize), strides=(2, 2), padding='same'))
+      if batch_norm:
+          model.add(layers.BatchNormalization(axis=axis))
+      model.add(layers.LeakyReLU())
+      if dropout:
+          model.add(layers.Dropout(0.3))
+
+  model.add(layers.Conv2D(128, (3+ksize, 3+ksize), strides=(2, 2), padding='same'))
+  if batch_norm:
+    model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+  if dropout:
+      model.add(layers.Dropout(0.3))
+
+  if Double:
+      model.add(layers.Conv2D(128, (3 + ksize, 3 + ksize), strides=(2, 2), padding='same'))
+      if batch_norm:
+          model.add(layers.BatchNormalization(axis=axis))
+      model.add(layers.LeakyReLU())
+      if dropout:
+          model.add(layers.Dropout(0.3))
+
+  if Deeper == 1:
+      model.add(layers.Conv2D(256, (3 + ksize, 3 + ksize), strides=(2, 2), padding='same'))
+      if batch_norm:
+          model.add(layers.BatchNormalization(axis=axis))
+      model.add(layers.LeakyReLU())
+      if dropout:
+          model.add(layers.Dropout(0.3))
+
+      if Double:
+          model.add(layers.Conv2D(256, (3 + ksize, 3 + ksize), strides=(2, 2), padding='same'))
+          if batch_norm:
+              model.add(layers.BatchNormalization(axis=axis))
+          model.add(layers.LeakyReLU())
+          if dropout:
+              model.add(layers.Dropout(0.3))
+
+  if Deeper==2:
+      model.add(layers.Conv2D(512, (3+ksize, 3+ksize), strides=(2, 2), padding='same'))
+      if batch_norm:
+        model.add(layers.BatchNormalization(axis=axis))
+      model.add(layers.LeakyReLU())
+      if dropout:
+          model.add(layers.Dropout(0.3))
+
+      if Double:
+          model.add(layers.Conv2D(512, (3 + ksize, 3 + ksize), strides=(2, 2), padding='same'))
+          if batch_norm:
+              model.add(layers.BatchNormalization(axis=axis))
+          model.add(layers.LeakyReLU())
+          if dropout:
+              model.add(layers.Dropout(0.3))
+
+
+  model.add(layers.Flatten())
+  model.add(layers.Dense(1, activation=activation))
+
+  return model
+
+
+
+
+def make_discriminator_model_MNIST_Batch1_2():
+  axis=-1
+  model = tf.keras.Sequential()
+
+  model.add(layers.Conv2D(32, (4, 4), strides=(2, 2), padding='same', input_shape=[28, 28, 1]))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(128, (3, 3), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(256, (3, 3), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+
+  model.add(layers.Flatten())
+  model.add(layers.Dense(1, activation='sigmoid'))
+
+  return model
+
+
+
+def make_discriminator_model_MNIST_Deep1():
+  axis = -1
+  model = tf.keras.Sequential()
+
+  model.add(layers.Conv2D(64, (5, 5), strides=(2, 2), padding='same',input_shape=[28, 28, 1]))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(128, (4, 4), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(256, (4, 4), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(512, (4, 4), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Flatten())
+  model.add(layers.Dense(1, activation='sigmoid'))
+
+  return model
+
+def make_discriminator_model_MNIST_Batch1_2():
+    axis = -1
+    data_format = 'channels_last'
+    im_size = (28, 28, 1)
+
+    discriminator = tf.keras.Sequential(name='discriminator')
+    discriminator.add(
+        layers.Conv2D(32, (5, 5), padding='same', use_bias=True, data_format=data_format, input_shape=im_size,
+                      name='from_im'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu0'))
+
+    discriminator.add(
+        layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down1'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn1'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu1'))
+    discriminator.add(
+        layers.Conv2D(64, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans1'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn2'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu2'))
+
+    discriminator.add(
+        layers.Conv2D(128, (3, 3), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down2'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn3'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu3'))
+    discriminator.add(
+        layers.Conv2D(128, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans2'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn4'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu4'))
+
+    return discriminator
+
+
+def make_discriminator_model_MNIST_Deep1_3():
+  axis = -1
+  model = tf.keras.Sequential()
+
+  model.add(layers.Conv2D(64, (5, 5), strides=(2, 2), padding='same',input_shape=[28, 28, 1]))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(128, (4, 4), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(256, (4, 4), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  # model.add(layers.Conv2D(512, (3, 3), strides=(2, 2), padding='same'))
+  # model.add(layers.BatchNormalization(axis=axis))
+  # model.add(layers.LeakyReLU())
+
+  model.add(layers.Flatten())
+  model.add(layers.Dense(1, activation='sigmoid'))
+
+  return model
+
+def make_discriminator_model_MNIST_Deep1_4():
+  axis = -1
+  model = tf.keras.Sequential()
+
+  model.add(layers.Conv2D(32, (5, 5), strides=(2, 2), padding='same', input_shape=[28, 28, 1]))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(64, (5, 5), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(128, (3, 3), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  model.add(layers.Conv2D(256, (3, 3), strides=(2, 2), padding='same'))
+  model.add(layers.BatchNormalization(axis=axis))
+  model.add(layers.LeakyReLU())
+
+  # model.add(layers.Conv2D(512, (3, 3), strides=(2, 2), padding='same'))
+  # model.add(layers.BatchNormalization(axis=axis))
+  # model.add(layers.LeakyReLU())
+
+  model.add(layers.Flatten())
+  model.add(layers.Dense(1, activation='sigmoid'))
+
+  return model
+
+
+
 def make_discriminator_model_MNIST_Deep():
+  axis = -1
   model = tf.keras.Sequential()
   model.add(layers.Conv2D(32, (5, 5), strides=(2, 2), padding='same', input_shape=[28, 28, 1]))
   model.add(layers.LeakyReLU())
-  model.add(layers.Dropout(0.5))
+  model.add(layers.Dropout(0.3))
 
   model.add(layers.Conv2D(64, (5, 5), strides=(1, 1), padding='same'))
   model.add(layers.LeakyReLU())
-  model.add(layers.Dropout(0.5))
+  model.add(layers.Dropout(0.3))
 
   model.add(layers.Conv2D(128, (5, 5), strides=(1, 1), padding='same'))
   model.add(layers.LeakyReLU())
-  model.add(layers.Dropout(0.5))
+  model.add(layers.Dropout(0.3))
 
   model.add(layers.Conv2D(256, (5, 5), strides=(2, 2), padding='same'))
   model.add(layers.LeakyReLU())
-  model.add(layers.Dropout(0.5))
+  model.add(layers.Dropout(0.3))
+
+  model.add(layers.Conv2D(512, (5, 5), strides=(2, 2), padding='same'))
+  model.add(layers.LeakyReLU())
+  model.add(layers.Dropout(0.3))
 
   model.add(layers.Flatten())
-  model.add(layers.Dense(1))
+  model.add(layers.Dense(1, activation='sigmoid'))
 
   return model
+
+
+
+def make_discriminator_model_MNIST_Deep3():
+    axis = -1
+    data_format = 'channels_last'
+    im_size = (28, 28, 1)
+
+    discriminator = tf.keras.Sequential(name='discriminator')
+    discriminator.add(
+        layers.Conv2D(32, (5, 5), padding='same', use_bias=True, data_format=data_format, input_shape=im_size,
+                      name='from_im'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu0'))
+
+    discriminator.add(
+        layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down1'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn1'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu1'))
+    discriminator.add(
+        layers.Conv2D(64, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans1'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn2'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu2'))
+
+    discriminator.add(
+        layers.Conv2D(128, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down2'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn3'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu3'))
+    discriminator.add(
+        layers.Conv2D(128, (5, 5), padding='same', use_bias=False, data_format=data_format, name='trans2'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn4'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu4'))
+
+    discriminator.add(
+        layers.Conv2D(256, (4, 4), strides=(2, 2), padding='same', use_bias=False, data_format=data_format,
+                      name='down3'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn5'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu5'))
+    discriminator.add(
+        layers.Conv2D(256, (3, 3), padding='same', use_bias=False, data_format=data_format, name='trans3'))
+    discriminator.add(layers.BatchNormalization(axis=axis, name='bn6'))
+    discriminator.add(layers.LeakyReLU(alpha=0.1, name='lrelu6'))
+
+    discriminator.add(layers.Flatten(name='flatten'))
+    discriminator.add(layers.Dense(1, activation='sigmoid', name='score'))
+
+    return discriminator
+
 
