@@ -1,0 +1,5 @@
+This set of python files and associated notebooks are designed to be ran on the google collabatory system.
+The notebooks are designed such that a user can mount to a google drive on google collab and access the tfrecords.
+The notebook also includes code to convert .jpg and csv labels to tfrecords.
+For a summary of the basic capabilities of the GAN and the various factors influencing performance. 
+Read the Report
